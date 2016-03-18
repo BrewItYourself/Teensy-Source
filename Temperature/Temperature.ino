@@ -22,6 +22,12 @@
 #define TYPE_ONE_WIRE 1
 #define ONE_WIRE_PIN 1
 
+#define TYPE_I2C 2
+#define TMP102_ADDR_0 0xF4628
+#define TMP102_ADDR_1 0xF4629
+#define TMP102_ADDR_2 0xF4632
+#define TMP102_ADDR_3 0xF4633
+
 #define MAX_SAMPLE_RATE 10
 #define MAX_SAMPLE_COUNT 10
 #define MAX_DELTA 0.5
@@ -36,7 +42,7 @@ typedef struct temperature_sensor {
   float prev_temp;
   float curr_temp;
   unsigned int type;
-  unsigned int pin;
+  unsigned int pin_addr;
   unsigned int sample_rate;
   unsigned int sample_count;
   unsigned long publisher_timer;
@@ -44,7 +50,7 @@ typedef struct temperature_sensor {
 } TemperatureSensor;
 
 const TemperatureSensor default_sensor {
-  0, 0.0f, 0.0f, 0, 0, 0, 0, 0
+  0, 0.0f, 0.0f, 0, 0, 0, 0, 0, NULL
 };
 
 // Temperature Sensor variables
@@ -100,7 +106,7 @@ static void handle_temp(TemperatureSensor* sensor) {
 }
 
 static void handle_analog(TemperatureSensor* sensor) {
-  unsigned int raw_voltage = analogRead(sensor->pin);
+  unsigned int raw_voltage = analogRead(sensor->pin_addr);
   float volts = raw_voltage / 205.0f;
   float celsius = 100.0 * volts - 50;
   sensor->curr_temp = celsius;
@@ -111,14 +117,32 @@ static void handle_one_wire(TemperatureSensor* sensor) {
   sensor->curr_temp = sensor->one_wire_data->dt_sensor.getTempCByIndex(0);
 }
 
-static void create_sensor(unsigned int id, unsigned int pin, unsigned int type, TemperatureSensor* sensor) {
+static void handle_i2c(TemperatureSensor* sensor) {
+  int byte_req = 2;
+  Wire.requestFrom(sensor->pin_addr, byte_req); 
+  delay(10);
+  if (Wire.available() >= byte_req) {
+    byte msb;
+    byte lsb;
+    unsigned int temperature;
+    
+    msb = Wire.read(); // receive high byte (full degrees)
+    lsb = Wire.read(); // receive low byte (fraction degrees) 
+    temperature = ((msb) << 4); // MSB
+    temperature |= (lsb >> 4); // LSB
+
+    sensor->curr_temp = temperature * 0.0625f;
+  }
+}
+
+static void create_sensor(unsigned int id, unsigned int pin_addr, unsigned int type, TemperatureSensor* sensor) {
   *sensor = default_sensor;
   sensor->id = id;
-  sensor->pin = pin;
+  sensor->pin_addr = pin_addr;
   sensor->type = type;
   if(type == TYPE_ONE_WIRE) {
     sensor->one_wire_data = (OneWireData*)malloc(sizeof(OneWireData));
-    sensor->one_wire_data->one_wire = OneWire(sensor->pin);
+    sensor->one_wire_data->one_wire = OneWire(sensor->pin_addr);
     sensor->one_wire_data->dt_sensor = DallasTemperature(&sensor->one_wire_data->one_wire);
     sensor->one_wire_data->dt_sensor.begin();
   }
@@ -138,6 +162,10 @@ void setup()
   TemperatureSensor one_wire_sensor;
   create_sensor(sensor_count, ONE_WIRE_PIN, TYPE_ONE_WIRE, &one_wire_sensor);
   sensors[sensor_count++] = one_wire_sensor;
+
+  TemperatureSensor i2c_sensor0;
+  create_sensor(sensor_count, TMP102_ADDR_0, TYPE_I2C, &i2c_sensor0);
+  sensors[sensor_count++] = i2c_sensor0;
 }
 
 void loop()
@@ -149,6 +177,12 @@ void loop()
       switch(sensor->type) {
         case TYPE_ANALOG:
           handle_analog(sensor);
+          break;
+        case TYPE_ONE_WIRE:
+          handle_one_wire(sensor);
+          break;
+        case TYPE_I2C:
+          handle_i2c(sensor);
           break;
       }
       
