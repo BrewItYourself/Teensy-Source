@@ -1,19 +1,10 @@
-/*
- * rosserial Temperature Sensor Example
- * 
- * This tutorial demonstrates the usage of the
- * Sparkfun TMP102 Digital Temperature Breakout board
- * http://www.sparkfun.com/products/9418
- * 
- * Source Code Based off of:
- * http://wiring.org.co/learning/libraries/tmp102sparkfun.html
- */
-
+//TODO: Create "library" for each component
 #include <Wire.h>
 #include <ros.h>
 #include <std_msgs/String.h>
 #include <std_msgs/UInt8.h>
 #include <std_msgs/Empty.h>
+#include <std_msgs/Bool.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
@@ -33,6 +24,8 @@
 #define MAX_SAMPLE_RATE 10
 #define MAX_SAMPLE_COUNT 10
 #define MAX_DELTA 0.5
+
+#define HEATER_PIN 22
 
 typedef struct one_wire_data {
   OneWire one_wire;
@@ -76,17 +69,22 @@ static void temperature_callback(const std_msgs::UInt8& id) {
   send_message(sensor);
 }
 
-static void send_count(void) {
+static void count_callback(const std_msgs::Empty& empty) {
   count_msg.data = (uint8_t)sizeof(sensors) / sizeof(sensors[0]);
   pub_temp.publish(&temp_msg);
 }
 
-static void count_callback(const std_msgs::Empty& empty) {
-  send_count();
+static void heater_callback(const std_msgs::Bool& state) {
+  if(state.data) {
+    digitalWrite(HEATER_PIN, HIGH);
+  } else {
+    digitalWrite(HEATER_PIN, LOW);
+  }
 }
 
 static ros::Subscriber<std_msgs::UInt8> sub_temp("req_temperature", &temperature_callback);
 static ros::Subscriber<std_msgs::Empty> sub_count("req_count", &count_callback);
+static ros::Subscriber<std_msgs::Bool> sub_heater("heater", &heater_callback);
 
 static void increment_sample_rate(TemperatureSensor* sensor) {
   if(sensor->sample_rate == MAX_SAMPLE_RATE) {
@@ -176,13 +174,14 @@ static void create_sensor(uint32_t id, uint32_t pin_addr, uint32_t type, Tempera
   }
 }
 
-void setup()
+void setup(void)
 {  
   nh.initNode();
   nh.advertise(pub_temp);
   nh.advertise(pub_count);
   nh.subscribe(sub_temp);
   nh.subscribe(sub_count);
+  nh.subscribe(sub_heater);
   
   uint32_t sensor_count = 0;
   // Create analog temperature sensor
@@ -190,16 +189,21 @@ void setup()
   create_sensor(sensor_count, ANALOG_PIN, TYPE_ANALOG, &analog_sensor);
   sensors[sensor_count++] = analog_sensor;
 
+  // Create one wire temperature sensor
   TemperatureSensor one_wire_sensor;
   create_sensor(sensor_count, ONE_WIRE_PIN, TYPE_ONE_WIRE, &one_wire_sensor);
   sensors[sensor_count++] = one_wire_sensor;
 
+  // Create I2C temperature sensors
   TemperatureSensor i2c_sensor0;
   create_sensor(sensor_count, TMP102_ADDR_0, TYPE_I2C, &i2c_sensor0);
   sensors[sensor_count++] = i2c_sensor0;
+
+  // Set heater output pin
+  pinMode(HEATER_PIN, OUTPUT); 
 }
 
-void loop()
+void loop(void)
 {
   TemperatureSensor* sensor;
   for(uint32_t c = 0; c < SENSOR_COUNT; c++) {
