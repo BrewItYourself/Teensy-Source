@@ -11,16 +11,18 @@
 
 #include <Wire.h>
 #include <ros.h>
-#include <std_msgs/Float32.h>
+#include <std_msgs/String.h>
 
 #define SENSOR_COUNT 1
 #define TYPE_ANALOG 0
+#define ANALOG_PIN 0
 
 #define MAX_SAMPLE_RATE 10
 #define MAX_SAMPLE_COUNT 10
 #define MAX_DELTA 0.5
 
 typedef struct temperature_sensor {
+  unsigned int id;
   float prev_temp;
   float curr_temp;
   unsigned int type;
@@ -31,15 +33,18 @@ typedef struct temperature_sensor {
 } TemperatureSensor;
 
 const TemperatureSensor default_sensor {
-  0.0f, 0.0f, 0, 0, 0, 0, 0
+  0, 0.0f, 0.0f, 0, 0, 0, 0, 0
 };
 
-// Temperature Sensor Array
+// Temperature Sensor variables
 TemperatureSensor sensors[SENSOR_COUNT];
+static const String json_prefix = "{\"id\":";
+static const String json_middle = ",\"temperature\":";
+static const String json_suffix = "}";
 
 // ROS variables
 static ros::NodeHandle  nh;
-static std_msgs::Float32 temp_msg;
+static std_msgs::String temp_msg;
 static ros::Publisher pub_temp("temperature", &temp_msg);
 
 static void increment_sample_rate(TemperatureSensor* sensor) {
@@ -77,7 +82,8 @@ static void scale_rate(TemperatureSensor* sensor)
 static void handle_temp(TemperatureSensor* sensor) {
   if(abs(sensor->prev_temp - sensor->curr_temp) > MAX_DELTA) {
     sensor->prev_temp = sensor->curr_temp;
-    temp_msg.data = sensor->curr_temp;
+    String message = json_prefix + sensor->id + json_middle + sensor->curr_temp + json_suffix;
+    temp_msg.data = message.c_str();
     pub_temp.publish(&temp_msg);
   }
 }
@@ -89,6 +95,13 @@ static void handle_analog(TemperatureSensor* sensor) {
   sensor->curr_temp = celsius;
 }
 
+static void create_sensor(unsigned int id, unsigned int address, unsigned int type, TemperatureSensor* sensor) {
+  *sensor = default_sensor;
+  sensor->id = id;
+  sensor->address = address;
+  sensor->type = type;
+}
+
 void setup()
 {  
   nh.initNode();
@@ -96,9 +109,8 @@ void setup()
 
   unsigned int sensor_count = 0;
   // Create analog temperature sensor
-  TemperatureSensor analog_sensor = default_sensor;
-  analog_sensor.address = 0;
-  analog_sensor.type = TYPE_ANALOG;
+  TemperatureSensor analog_sensor;
+  create_sensor(sensor_count, ANALOG_PIN, TYPE_ANALOG, &analog_sensor);
   sensors[sensor_count++] = analog_sensor;
 }
 
