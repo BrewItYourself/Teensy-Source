@@ -22,7 +22,7 @@
 #define TMP102_ADDR_3 0xF4633
 
 #define MAX_SAMPLE_RATE 10
-#define MAX_SAMPLE_COUNT 10
+#define MAX_SAMPLE_COUNT 4
 #define MAX_DELTA 0.5
 
 #define HEATER_PIN 22
@@ -102,7 +102,7 @@ static void decrement_sample_rate(TemperatureSensor* sensor) {
 
 static void scale_rate(TemperatureSensor* sensor)
 {
-    if(sensor->prev_temp == sensor->curr_temp) {
+    if(abs(sensor->prev_temp - sensor->curr_temp) <= MAX_DELTA) {
        sensor->sample_count--;
     } else {
        sensor->sample_count++;
@@ -199,8 +199,9 @@ void setup(void)
   create_sensor(sensor_count, TMP102_ADDR_0, TYPE_I2C, &i2c_sensor0);
   sensors[sensor_count++] = i2c_sensor0;
 
-  // Set heater output pin
-  pinMode(HEATER_PIN, OUTPUT); 
+  // Set heater output pin and drive low
+  pinMode(HEATER_PIN, OUTPUT);
+  digitalWrite(HEATER_PIN, LOW);
 }
 
 void loop(void)
