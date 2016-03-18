@@ -12,24 +12,35 @@
 #include <Wire.h>
 #include <ros.h>
 #include <std_msgs/String.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 #define SENSOR_COUNT 1
 #define TYPE_ANALOG 0
 #define ANALOG_PIN 0
 
+#define TYPE_ONE_WIRE 1
+#define ONE_WIRE_PIN 1
+
 #define MAX_SAMPLE_RATE 10
 #define MAX_SAMPLE_COUNT 10
 #define MAX_DELTA 0.5
+
+typedef struct one_wire_data {
+  OneWire one_wire;
+  DallasTemperature dt_sensor;
+} OneWireData;
 
 typedef struct temperature_sensor {
   unsigned int id;
   float prev_temp;
   float curr_temp;
   unsigned int type;
-  unsigned int address;
+  unsigned int pin;
   unsigned int sample_rate;
   unsigned int sample_count;
   unsigned long publisher_timer;
+  OneWireData* one_wire_data;
 } TemperatureSensor;
 
 const TemperatureSensor default_sensor {
@@ -89,17 +100,28 @@ static void handle_temp(TemperatureSensor* sensor) {
 }
 
 static void handle_analog(TemperatureSensor* sensor) {
-  unsigned int raw_voltage = analogRead(sensor->address);
+  unsigned int raw_voltage = analogRead(sensor->pin);
   float volts = raw_voltage / 205.0f;
   float celsius = 100.0 * volts - 50;
   sensor->curr_temp = celsius;
 }
 
-static void create_sensor(unsigned int id, unsigned int address, unsigned int type, TemperatureSensor* sensor) {
+static void handle_one_wire(TemperatureSensor* sensor) {
+  sensor->one_wire_data->dt_sensor.requestTemperatures();
+  sensor->curr_temp = sensor->one_wire_data->dt_sensor.getTempCByIndex(0);
+}
+
+static void create_sensor(unsigned int id, unsigned int pin, unsigned int type, TemperatureSensor* sensor) {
   *sensor = default_sensor;
   sensor->id = id;
-  sensor->address = address;
+  sensor->pin = pin;
   sensor->type = type;
+  if(type == TYPE_ONE_WIRE) {
+    sensor->one_wire_data = (OneWireData*)malloc(sizeof(OneWireData));
+    sensor->one_wire_data->one_wire = OneWire(sensor->pin);
+    sensor->one_wire_data->dt_sensor = DallasTemperature(&sensor->one_wire_data->one_wire);
+    sensor->one_wire_data->dt_sensor.begin();
+  }
 }
 
 void setup()
@@ -112,6 +134,10 @@ void setup()
   TemperatureSensor analog_sensor;
   create_sensor(sensor_count, ANALOG_PIN, TYPE_ANALOG, &analog_sensor);
   sensors[sensor_count++] = analog_sensor;
+
+  TemperatureSensor one_wire_sensor;
+  create_sensor(sensor_count, ONE_WIRE_PIN, TYPE_ONE_WIRE, &one_wire_sensor);
+  sensors[sensor_count++] = one_wire_sensor;
 }
 
 void loop()
