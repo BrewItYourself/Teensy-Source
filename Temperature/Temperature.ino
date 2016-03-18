@@ -13,6 +13,7 @@
 #include <ros.h>
 #include <std_msgs/String.h>
 #include <std_msgs/UInt8.h>
+#include <std_msgs/Empty.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
@@ -39,13 +40,13 @@ typedef struct one_wire_data {
 } OneWireData;
 
 typedef struct temperature_sensor {
-  unsigned int id;
+  uint32_t id;
   float prev_temp;
   float curr_temp;
-  unsigned int type;
-  unsigned int pin_addr;
-  unsigned int sample_rate;
-  unsigned int sample_count;
+  uint32_t type;
+  uint32_t pin_addr;
+  uint32_t sample_rate;
+  uint32_t sample_count;
   unsigned long publisher_timer;
   OneWireData* one_wire_data;
 } TemperatureSensor;
@@ -63,9 +64,11 @@ static const String json_suffix = "}";
 // ROS variables
 static ros::NodeHandle  nh;
 static std_msgs::String temp_msg;
+static std_msgs::UInt8 count_msg;
 static ros::Publisher pub_temp("temperature", &temp_msg);
+static ros::Publisher pub_count("temp_sensor_count", &count_msg);
 
-static void message_callback(const std_msgs::UInt8& id){
+static void temperature_callback(const std_msgs::UInt8& id) {
   if(id.data > SENSOR_COUNT) {
     return;
   }
@@ -73,7 +76,17 @@ static void message_callback(const std_msgs::UInt8& id){
   send_message(sensor);
 }
 
-static ros::Subscriber<std_msgs::UInt8> sub_temp("req_temperature", &message_callback);
+static void send_count(void) {
+  count_msg.data = (uint8_t)sizeof(sensors) / sizeof(sensors[0]);
+  pub_temp.publish(&temp_msg);
+}
+
+static void count_callback(const std_msgs::Empty& empty) {
+  send_count();
+}
+
+static ros::Subscriber<std_msgs::UInt8> sub_temp("req_temperature", &temperature_callback);
+static ros::Subscriber<std_msgs::Empty> sub_count("req_count", &count_callback);
 
 static void increment_sample_rate(TemperatureSensor* sensor) {
   if(sensor->sample_rate == MAX_SAMPLE_RATE) {
@@ -121,7 +134,7 @@ static void handle_temp(TemperatureSensor* sensor) {
 }
 
 static void handle_analog(TemperatureSensor* sensor) {
-  unsigned int raw_voltage = analogRead(sensor->pin_addr);
+  uint32_t raw_voltage = analogRead(sensor->pin_addr);
   float volts = raw_voltage / 205.0f;
   float celsius = 100.0 * volts - 50;
   sensor->curr_temp = celsius;
@@ -139,7 +152,7 @@ static void handle_i2c(TemperatureSensor* sensor) {
   if (Wire.available() >= byte_req) {
     byte msb;
     byte lsb;
-    unsigned int temperature;
+    uint32_t temperature;
     
     msb = Wire.read(); // receive high byte (full degrees)
     lsb = Wire.read(); // receive low byte (fraction degrees) 
@@ -150,7 +163,7 @@ static void handle_i2c(TemperatureSensor* sensor) {
   }
 }
 
-static void create_sensor(unsigned int id, unsigned int pin_addr, unsigned int type, TemperatureSensor* sensor) {
+static void create_sensor(uint32_t id, uint32_t pin_addr, uint32_t type, TemperatureSensor* sensor) {
   *sensor = default_sensor;
   sensor->id = id;
   sensor->pin_addr = pin_addr;
@@ -167,9 +180,11 @@ void setup()
 {  
   nh.initNode();
   nh.advertise(pub_temp);
+  nh.advertise(pub_count);
   nh.subscribe(sub_temp);
-
-  unsigned int sensor_count = 0;
+  nh.subscribe(sub_count);
+  
+  uint32_t sensor_count = 0;
   // Create analog temperature sensor
   TemperatureSensor analog_sensor;
   create_sensor(sensor_count, ANALOG_PIN, TYPE_ANALOG, &analog_sensor);
@@ -187,7 +202,7 @@ void setup()
 void loop()
 {
   TemperatureSensor* sensor;
-  for(unsigned int c = 0; c < SENSOR_COUNT; c++) {
+  for(uint32_t c = 0; c < SENSOR_COUNT; c++) {
     sensor = &sensors[c];
     if(millis() > sensor->publisher_timer) {
       switch(sensor->type) {
