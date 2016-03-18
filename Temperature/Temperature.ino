@@ -12,10 +12,11 @@
 #include <Wire.h>
 #include <ros.h>
 #include <std_msgs/String.h>
+#include <std_msgs/UInt8.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
-#define SENSOR_COUNT 1
+#define SENSOR_COUNT 6
 #define TYPE_ANALOG 0
 #define ANALOG_PIN 0
 
@@ -64,6 +65,16 @@ static ros::NodeHandle  nh;
 static std_msgs::String temp_msg;
 static ros::Publisher pub_temp("temperature", &temp_msg);
 
+static void message_callback(const std_msgs::UInt8& id){
+  if(id.data > SENSOR_COUNT) {
+    return;
+  }
+  TemperatureSensor* sensor = &sensors[id.data];
+  send_message(sensor);
+}
+
+static ros::Subscriber<std_msgs::UInt8> sub_temp("req_temperature", &message_callback);
+
 static void increment_sample_rate(TemperatureSensor* sensor) {
   if(sensor->sample_rate == MAX_SAMPLE_RATE) {
     return;
@@ -96,12 +107,16 @@ static void scale_rate(TemperatureSensor* sensor)
    }
 }
 
+static void send_message(TemperatureSensor* sensor) {
+  String message = json_prefix + sensor->id + json_middle + sensor->curr_temp + json_suffix;
+  temp_msg.data = message.c_str();
+  pub_temp.publish(&temp_msg);
+}
+
 static void handle_temp(TemperatureSensor* sensor) {
   if(abs(sensor->prev_temp - sensor->curr_temp) > MAX_DELTA) {
     sensor->prev_temp = sensor->curr_temp;
-    String message = json_prefix + sensor->id + json_middle + sensor->curr_temp + json_suffix;
-    temp_msg.data = message.c_str();
-    pub_temp.publish(&temp_msg);
+    send_message(sensor);
   }
 }
 
@@ -152,6 +167,7 @@ void setup()
 {  
   nh.initNode();
   nh.advertise(pub_temp);
+  nh.subscribe(sub_temp);
 
   unsigned int sensor_count = 0;
   // Create analog temperature sensor
