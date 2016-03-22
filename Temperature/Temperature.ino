@@ -220,6 +220,8 @@ void loop(void)
         case TYPE_I2C:
           handle_i2c(sensor);
           break;
+        case default:
+          return; // Unspecified device type will result in innaccurate reading
       }
       
       scale_rate(sensor);
