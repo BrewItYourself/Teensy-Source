@@ -22,7 +22,7 @@
 #define TMP102_ADDR_3 0xF4633
 
 #define MAX_SAMPLE_RATE 10
-#define MAX_SAMPLE_COUNT 4
+#define MAX_SAMPLE_COUNT 8
 #define MAX_DELTA 1 
 
 #define HEATER_PIN 22
